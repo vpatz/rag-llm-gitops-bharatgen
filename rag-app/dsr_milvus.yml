@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-milvus
+  namespace: indic-rag
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-milvus
+  template:
+    metadata:
+      labels:
+        app: rag-milvus
+    spec:
+      serviceAccountName: "deployer"
+      containers:
+      # Etcd sidecar
+      - name: etcd
+        image: bitnamilegacy/etcd:3.6.4-debian-12-r4
+        command:
+          - etcd
+          - --data-dir=/etcd-data
+          - --listen-client-urls=http://0.0.0.0:2379
+          - --advertise-client-urls=http://127.0.0.1:2379
+        ports:
+          - name: etcd
+            containerPort: 2379
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+          - name: etcd-data
+            mountPath: /etcd-data
+
+      # MinIO sidecar
+      - name: minio
+        image: minio/minio:latest
+        args: ["server", "/data"]
+        env:
+          - name: MINIO_ACCESS_KEY
+            value: minioadmin
+          - name: MINIO_SECRET_KEY
+            value: minioadmin
+        ports:
+          - name: minio
+            containerPort: 9000
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+        volumeMounts:
+          - name: minio-data
+            mountPath: /data
+
+      # Milvus main container
+      - name: milvus
+        image: milvusdb/milvus:v2.6.7
+        command: ["milvus", "run", "standalone"]
+        ports:
+          - name: milvus-grpc
+            containerPort: 19530
+          - name: milvus-metrics
+            containerPort: 9091
+        env:
+          - name: ETCD_ENDPOINTS
+            value: http://127.0.0.1:2379
+          - name: MINIO_ADDRESS
+            value: 127.0.0.1:9000
+          - name: MINIO_ACCESS_KEY
+            value: minioadmin
+          - name: MINIO_SECRET_KEY
+            value: minioadmin
+          - name: MINIO_USE_SSL
+            value: "false"
+        resources:
+          requests:
+            cpu: 2
+            memory: 8Gi
+          limits:
+            cpu: 4
+            memory: 16Gi
+        volumeMounts:
+          - name: milvus-storage
+            mountPath: /var/lib/milvus
+
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: config-volume
+          emptyDir: {}
+        - name: triton-volume 
+          emptyDir: {}
+        - name: rag-akm-storage-pvc
+          persistentVolumeClaim:
+            claimName: rag-akm-storage-pvc
+        - name: milvus-storage
+          emptyDir: {}
+        - name: etcd-data
+          emptyDir: {}
+        - name: minio-data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-milvus-svc
+  namespace: indic-rag
+spec:
+  selector:
+    app: rag-milvus
+  ports:
+    - name: milvus-grpc
+      port: 19530
+      targetPort: milvus-grpc
+    - name: milvus-metrics
+      port: 9091
+      targetPort: milvus-metrics

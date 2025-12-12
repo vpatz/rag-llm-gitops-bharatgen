@@ -1,0 +1,196 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-serve
+  namespace: indic-rag
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-serve
+  template:
+    metadata:
+      labels:
+        app: model-serve
+    spec:
+      serviceAccountName: "deployer"
+      containers:
+      - name: vllm-multi
+        image: vllm/vllm-openai:latest
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Starting vLLM servers..."
+            vllm serve ibm-granite/granite-3.3-8b-instruct --host 0.0.0.0 --port 8001 --gpu-memory-utilization 0.7 &
+            vllm serve intfloat/multilingual-e5-large --host 0.0.0.0 --port 8002 --gpu-memory-utilization 0.1 &
+            vllm serve BAAI/bge-reranker-v2-m3 --host 0.0.0.0 --port 8003 --gpu-memory-utilization 0.1 &
+            wait || true
+            sleep infinity
+        ports:
+          - name: chat
+            containerPort: 8001
+          - name: embed
+            containerPort: 8002
+          - name: rerank
+            containerPort: 8003
+        env:
+          - name: VLLM_LOGGING_LEVEL
+            value: INFO
+          - name: HUGGINGFACE_HUB_CACHE
+            value: "/platform_storage/HF_HOME"
+        resources:
+          requests:
+            cpu: 8
+            memory: 64Gi
+            nvidia.com/gpu: 1
+          limits:
+            cpu: 16
+            memory: 128Gi
+            nvidia.com/gpu: 1
+        volumeMounts:
+          - mountPath: "/platform_storage"
+            name: rag-akm-storage-pvc
+          - name: cache
+            mountPath: /.cache
+          - name: config-volume
+            mountPath: /.config
+          - name: triton-volume
+            mountPath: /.triton
+      - name: vllm-vision
+        image: vllm/vllm-openai:latest
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Starting VLM-vLLM servers..."
+            vllm serve mistralai/Pixtral-12B-2409 --host 0.0.0.0 --port 8004 --tokenizer_mode mistral &
+            wait || true
+            sleep infinity
+        ports:
+          - name: vision
+            containerPort: 8004
+        env:
+          - name: VLLM_LOGGING_LEVEL
+            value: INFO
+          - name: HUGGINGFACE_HUB_CACHE
+            value: "/platform_storage/HF_HOME"
+        resources:
+          requests:
+            cpu: 2
+            memory: 32Gi
+            nvidia.com/gpu: 1
+          limits:
+            cpu: 4
+            memory: 64Gi
+            nvidia.com/gpu: 1
+        volumeMounts:
+          - mountPath: "/platform_storage"
+            name: rag-akm-storage-pvc
+          - name: cache
+            mountPath: /.cache
+          - name: config-volume
+            mountPath: /.config
+          - name: triton-volume
+            mountPath: /.triton
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: config-volume
+          emptyDir: {}
+        - name: triton-volume 
+          emptyDir: {}
+        - name: rag-akm-storage-pvc
+          persistentVolumeClaim:
+            claimName: rag-akm-storage-pvc
+        - name: milvus-storage
+          emptyDir: {}
+        - name: etcd-data
+          emptyDir: {}
+        - name: minio-data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-serve-svc
+  namespace: indic-rag
+spec:
+  selector:
+    app: model-serve
+  ports:
+    - name: chat
+      port: 8001
+      targetPort: chat
+    - name: embed
+      port: 8002
+      targetPort: embed
+    - name: rerank
+      port: 8003
+      targetPort: rerank
+    - name: vision
+      port: 8004
+      targetPort: vision
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: chat-route
+  namespace: indic-rag
+spec:
+  host: chat-route.indic-rag.vpc.res.ibm.com
+  to:
+    kind: Service
+    name: model-serve-svc
+  port:
+    targetPort: chat
+  tls:
+    termination: edge
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: embed-route
+  namespace: indic-rag
+spec:
+  host: embed-route.indic-rag.vpc.res.ibm.com
+  to:
+    kind: Service
+    name: model-serve-svc
+  port:
+    targetPort: embed
+  tls:
+    termination: edge
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: rerank-route
+  namespace: indic-rag
+spec:
+  host: rerank-route.indic-rag.vpc.res.ibm.com
+  to:
+    kind: Service
+    name: model-serve-svc
+  port:
+    targetPort: rerank
+  tls:
+    termination: edge
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: vision-route
+  namespace: indic-rag
+spec:
+  host: vision-route.indic-rag.vpc.res.ibm.com
+  to:
+    kind: Service
+    name: model-serve-svc
+  port:
+    targetPort: vision
+  tls:
+    termination: edge

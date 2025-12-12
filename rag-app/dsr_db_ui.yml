@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-ui
+  namespace: indic-rag 
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db-ui
+  template:
+    metadata:
+      labels:
+        app: db-ui
+        project-name: wca4z
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault  
+      serviceAccountName: "deployer"
+      volumes:
+        - name: rag-akm-storage-pvc
+          persistentVolumeClaim:
+            claimName: rag-akm-storage-pvc
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      containers:
+      - name: db-app
+        image: us.icr.io/cil15-shared-registry/cmisale/pytorchbase:2.3cu121
+        env:
+          - name: HUGGINGFACE_HUB_CACHE
+            value: "/platform_storage/HF_HOME"
+        imagePullPolicy: IfNotPresent
+        ports:
+          - containerPort: 10000
+            protocol: TCP
+            name: websocket
+        command:
+          - /bin/sh
+          - -c
+        args:
+          - |
+            set -e  # Exit on any error
+            echo "====================="
+            echo "Container startup info"
+            echo "====================="
+            which python
+            nvidia-smi
+            nvcc --version
+            echo $CUDA_VISIBLE_DEVICES
+            pip install flask docling pdfplumber rapidfuzz requests pymilvus joblib tqdm scipy scikit-learn sentence_splitter cohere gradio --no-cache-dir && \
+            pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+            pip install numpy==1.26.4 && \
+            echo "Pip install completed" && \
+            git clone https://github.com/vpatz/rag-llm-gitops-bharatgen.git && \
+            echo "Git clone completed" && \
+            cd rag-llm-gitops-bharatgen/rag-app && \
+            echo "Changed directory to rag-app" && \
+            python ui/ui_ingest.py
+        resources:
+          requests:
+            cpu: 14
+            memory: 8Gi
+            nvidia.com/gpu: 0
+            ephemeral-storage: "1Gi"
+          limits:
+            cpu: 16
+            memory: 16Gi
+            nvidia.com/gpu: 0
+            ephemeral-storage: "2Gi"
+        volumeMounts:
+          - mountPath: "/platform_storage"
+            name: rag-akm-storage-pvc
+      imagePullSecrets:
+        - name: cil15-vela-all-icr-io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-ui-service
+  namespace: indic-rag
+spec:
+  selector:
+    app: db-ui
+  ports:
+    - name: websocket
+      protocol: TCP
+      port: 10000
+      targetPort: 10000
+  type: ClusterIP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: db-ui-route
+  namespace: indic-rag
+  annotations:
+    haproxy.router.openshift.io/timeout: 5m   # keeps WebSocket connections alive longer
+spec:
+  host: db-ui.indic-rag.vpc.res.ibm.com
+  to:
+    kind: Service
+    name: db-ui-service
+  port:
+    targetPort: websocket
+  tls:
+    termination: edge    # can also be reencrypt or passthrough if TLS issues occur
+  wildcardPolicy: None

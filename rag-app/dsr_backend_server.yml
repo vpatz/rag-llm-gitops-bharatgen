@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-backend
+  namespace: indic-rag
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-backend
+  template:
+    metadata:
+      labels:
+        app: rag-backend
+        project-name: wca4z
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: "deployer"
+      volumes:
+        - name: rag-akm-storage-pvc
+          persistentVolumeClaim:
+            claimName: rag-akm-storage-pvc
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      containers:
+      - name: flux-backend
+        image: us.icr.io/cil15-shared-registry/cmisale/pytorchbase:2.3cu121
+        imagePullPolicy: IfNotPresent
+        ports:
+          - containerPort: 15000
+            protocol: TCP
+            name: websocket
+        command:
+          - /bin/sh
+          - -c
+        args:
+          - |
+            echo "====================="
+            echo "Container startup info"
+            echo "====================="
+            pip install flask scikit-learn requests pymilvus joblib tqdm scipy scikit-learn sentence_splitter cohere --no-cache-dir
+            git clone https://github.com/vpatz/rag-llm-gitops-bharatgen.git
+            cd rag-llm-gitops-bharatgen/rag-app
+            python -m src.retrieve.backend_server
+        resources:
+          requests:
+            cpu: 1
+            memory: 2Gi
+            nvidia.com/gpu: 0
+          limits:
+            cpu: 2
+            memory: 4Gi
+            nvidia.com/gpu: 0
+        volumeMounts:
+          - mountPath: "/platform_storage"
+            name: rag-akm-storage-pvc
+      imagePullSecrets:
+        - name: cil15-vela-all-icr-io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-backend-service
+  namespace: indic-rag
+spec:
+  selector:
+    app: rag-backend
+  ports:
+    - name: websocket
+      protocol: TCP
+      port: 15000
+      targetPort: 15000
+  type: ClusterIP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: rag-backend-route
+  namespace: indic-rag
+  annotations:
+    haproxy.router.openshift.io/timeout: 5m   # keeps WebSocket connections alive longer
+spec:
+  host: rag-backend.indic-rag.vpc.res.ibm.com
+  to:
+    kind: Service
+    name: rag-backend-service
+  port:
+    targetPort: websocket
+  tls:
+    termination: edge    # can also be reencrypt or passthrough if TLS issues occur
+  wildcardPolicy: None
