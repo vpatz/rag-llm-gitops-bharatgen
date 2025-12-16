@@ -29,5 +29,8 @@
   "backend_url": "http://rag-backend-service",
   "backend_server_port": "15000",
 
+  "docling_server_url": "http://docling-server-svc",
+  "docling_server_port": "5001",
+
   "log_level": "info"
 }

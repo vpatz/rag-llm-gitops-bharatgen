@@ -6,37 +6,24 @@ import uuid
 import base64
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
-import requests
+
 from tqdm import tqdm
-import pdfplumber
-import base64
-from io import BytesIO
 os.environ['GRPC_VERBOSITY'] = 'ERROR' 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 from pathlib import Path
+from docling.datamodel.base_models import InputFormat
 from docling.datamodel.document import DoclingDocument
-from concurrent.futures import as_completed, ProcessPoolExecutor, ThreadPoolExecutor
-from threading import Semaphore
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from concurrent.futures import as_completed, ProcessPoolExecutor
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from sentence_splitter import SentenceSplitter
 
 from ..common.llm_utils import create_llm_session, classify_text_with_llm, summarize_table, tokenize_with_llm
 from ..common.vision_utils import generate_image_summary
 from ..common.misc_utils import get_logger, generate_file_checksum, text_suffix, table_suffix, image_suffix
 from ..ingest.pdf_utils import get_toc, get_matching_header_lvl, load_pdf_pages, find_text_font_size
-
-
-SETTINGS_PATH = Path(__file__).resolve().parent.parent / "settings.json"
-with open(SETTINGS_PATH, 'r') as f:
-    data = json.load(f)
-docling_server_url = str(data.get("docling_server_url"))
-docling_server_port = int(data.get("docling_server_port"))
-
-PAGES_PER_CHUNK = 15
-MAX_IN_FLIGHT_TASKS = 4
-POLL_DELAY = 5.0
-MAX_WAIT_SECONDS = 15 * 60 # 15 minutes
-MAX_PARALLEL_CHUNKS = 4 # docling_workers
 
 logging.getLogger('docling').setLevel(logging.CRITICAL)
 
@@ -58,12 +45,6 @@ POOL_SIZE = 8
 IMAGE_RESOLUTION_SCALE = 1.0
 
 create_llm_session(pool_maxsize=POOL_SIZE)
-
-def pil_to_data_uri(img) -> str:
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-    return f"data:image/png;base64,{b64}"
 
 def process_converted_document(res, pdf_path, out_path, gen_model, gen_endpoint, vlm_model, vlm_endpoint, start_time, timings):    
     doc_json = res.export_to_dict()
@@ -211,14 +192,7 @@ def process_converted_document(res, pdf_path, out_path, gen_model, gen_endpoint,
     if image_count:
         t0 = time.time()
         image_dict, image_uris, ordered_image_captions = [], [], []
-
-        picture_items = [
-            item for item, _ in res.iterate_items() if item.label == "picture"
-        ]
-
-        for image_idx, (block, picture_item) in enumerate(
-            zip(doc_json.get('pictures', []), picture_items)
-        ):
+        for image_idx, block in enumerate(doc_json.get('pictures', [])):
             caption = ''
             for child in block.get('children', []):
                 child_id = child['$ref']
@@ -227,43 +201,24 @@ def process_converted_document(res, pdf_path, out_path, gen_model, gen_endpoint,
                         caption += f'{child_block["text"]} '
                         image_captions.pop(caption_idx)
                         break
-
-            img = picture_item.get_image(doc=res)
-            uri = pil_to_data_uri(img) if img is not None else ""
-
+            uri = block.get('image', {}).get('uri', '')
             image_uris.append(uri)
             ordered_image_captions.append(caption)
-
         timings['extract_images'] = time.time() - t0
 
         t0 = time.time()
-        image_summaries = generate_image_summary(
-            list(zip(image_uris, ordered_image_captions)),
-            vlm_model,
-            vlm_endpoint,
-        )
+        image_summaries = generate_image_summary(list(zip(image_uris, ordered_image_captions)), vlm_model, vlm_endpoint)
         timings['generate_image_summaries'] = time.time() - t0
 
         t0 = time.time()
-        for idx, (uri, summary, caption) in enumerate(
-            zip(image_uris, image_summaries, ordered_image_captions)
-        ):
-            image_dict.append(
-                {idx: {'image': uri, 'caption': caption, 'summary': summary}}
-            )
-
-        decisions = classify_text_with_llm(
-            image_summaries, gen_model, gen_endpoint, pdf_path, "image"
-        )
-        filtered_image_dicts = [
-            image_dict[idx] for idx, keep in enumerate(decisions) if keep
-        ]
-
+        for idx, (uri, summary, caption) in enumerate(zip(image_uris, image_summaries, ordered_image_captions)):
+            image_dict.append({idx: {'image': uri, 'caption': caption, 'summary': summary}})
+        decisions = classify_text_with_llm(image_summaries, gen_model, gen_endpoint, pdf_path, "image")
+        filtered_image_dicts = [image_dict[idx] for idx, keep in enumerate(decisions) if keep]
         (Path(out_path) / f"{stem}{image_suffix}").write_text(json.dumps(filtered_image_dicts, indent=2), encoding="utf-8")
         timings['filter_image_summaries'] = time.time() - t0
     else:
         (Path(out_path) / f"{stem}{image_suffix}").write_text(json.dumps([], indent=2), encoding="utf-8")
-
 
     total_time = time.time() - start_time
     logger.debug(f"Timing for {stem} Total: {total_time:.2f}s")
@@ -271,119 +226,7 @@ def process_converted_document(res, pdf_path, out_path, gen_model, gen_endpoint,
         logger.debug(f"  {k:<30}: {v:.2f}s")
     return page_count, table_count, image_count
 
-def post_file_async(
-    file_path: Path,
-    start_page: int,
-    end_page: int,
-    max_retries: int = 3,
-) -> str:
-    data = {
-        "to_formats": ["json"],
-        "do_ocr": False,
-        "include_images": True,
-        "images_scale": 1.,
-        "image_export_mode": "embedded",
-        "table_mode": "accurate",
-        "do_table_structure": True,
-        "abort_on_error": False,
-        "page_range": [start_page, end_page],
-    }
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            with file_path.open("rb") as f:
-                response = requests.post(
-                    f"{docling_server_url}:{docling_server_port}/v1/convert/file/async",
-                    files={"files": (file_path.name, f, "application/pdf")},
-                    data=data,
-                    timeout=30,
-                )
-
-            if response.status_code == 200:
-                return response.json()["task_id"]
-
-            raise RuntimeError(response.text)
-
-        except Exception as e:
-            if attempt == max_retries:
-                raise RuntimeError(
-                    f"Docling async submit failed after {max_retries} attempts: {e}"
-                )
-            time.sleep(2 ** attempt)
-
-def poll_task(task_id: str) -> dict:
-    start_time = time.time()
-
-    while True:
-        response = requests.get(
-            f"{docling_server_url}:{docling_server_port}/v1/result/{task_id}",
-            timeout=30,
-        )
-
-        if response.status_code == 200:
-            return response.json()["document"]["json_content"]
-
-        if response.status_code != 404:
-            raise RuntimeError(
-                f"Docling task {task_id} failed "
-                f"({response.status_code}): {response.text}"
-            )
-
-        elapsed = time.time() - start_time
-        if elapsed > MAX_WAIT_SECONDS:
-            raise TimeoutError(
-                f"Docling task {task_id} exceeded max wait time"
-            )
-        time.sleep(POLL_DELAY)
-
-def _process_chunk(pdf_path: Path, start: int, end: int) -> DoclingDocument:
-    task_id = post_file_async(pdf_path, start, end)
-    doc_json = poll_task(task_id)
-    return DoclingDocument.model_validate(doc_json)
-
-def convert_via_docling_server(path: str) -> dict:
-    pdf_path = Path(path)
-
-    # Count pages safely
-    with pdfplumber.open(pdf_path) as pdf:
-        total_pages = len(pdf.pages)
-
-    # Build chunk ranges
-    chunks = [
-        (start, min(start + PAGES_PER_CHUNK - 1, total_pages))
-        for start in range(1, total_pages + 1, PAGES_PER_CHUNK)
-    ]
-
-    results: dict[int, DoclingDocument] = {}
-
-    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_CHUNKS) as executor:
-        future_map = {
-            executor.submit(_process_chunk, pdf_path, start, end): start
-            for start, end in chunks
-        }
-
-        for future in as_completed(future_map):
-            start_page = future_map[future]
-            try:
-                results[start_page] = future.result()
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed processing pages starting at {start_page}: {e}"
-                )
-
-    # Preserve page order
-    ordered_docs = [results[start] for start, _ in sorted(chunks)]
-
-    return DoclingDocument.concatenate(ordered_docs).export_to_dict()
-
-def convert_and_process(
-    path,
-    out_path,
-    llm_model,
-    llm_endpoint,
-    vlm_model,
-    vlm_endpoint
-):
+def convert_and_process(path, doc_converter, out_path, llm_model, llm_endpoint, vlm_model, vlm_endpoint):
     try:
         logger.info(f"Processing '{path}'")
         timings = {}
@@ -391,109 +234,88 @@ def convert_and_process(
         f = (Path(out_path) / f"{Path(path).stem}_converted.json")
         logger.debug(f"Checking {str(f)}")
         converted_doc = None
-
         if f.exists():
             logger.debug("Loading from converted json")
             with Path(str(f)).open("r") as fp:
                 doc_dict = json.load(fp)
                 converted_doc = DoclingDocument.model_validate(doc_dict)
-
         else:
             logger.debug(f"Not exist, converting '{path}'")
+            start_time = time.time()
             t0 = time.time()
-            doc_dict = convert_via_docling_server(path)
-            converted_doc = DoclingDocument.model_validate(doc_dict)
-
-            timings["conversion_time"] = time.time() - t0
+            converted_doc = doc_converter.convert(path).document
+            timings['conversion_time'] = time.time() - t0
             logger.debug(f"'{path}' converted")
-
             converted_doc.save_as_json(str(f))
-
-        page_count, table_count, image_count = process_converted_document(
-            converted_doc,
-            path,
-            out_path,
-            llm_model,
-            llm_endpoint,
-            vlm_model,
-            vlm_endpoint,
-            start_time,
-            timings,
-        )
-
-        return path, {
-            "page_count": page_count,
-            "table_count": table_count,
-            "image_count": image_count,
-        }
-
+        page_count, table_count, image_count = process_converted_document(converted_doc, path, out_path, llm_model, llm_endpoint, vlm_model, vlm_endpoint, start_time, timings)
+        return path, {"page_count": page_count, "table_count": table_count, "image_count": image_count}
     except Exception as e:
         raise Exception(f"Error converting and processing '{path}': {e}")
 
+def extract_document_data(input_paths, out_path, llm_model, llm_endpoint, vlm_model, vlm_endpoint, force=False):
+    # Accelerator & pipeline options
+    pipeline_options = PdfPipelineOptions()
+    # Docling model files are getting downloaded to this /var/docling-models dir by this project-ai-services/images/rag-base/download_docling_models.py script in project-ai-services/images/rag-base/Containerfile
+    # pipeline_options.artifacts_path = "/var/docling-models"
+    
+    pipeline_options.do_table_structure = True
+    pipeline_options.table_structure_options.do_cell_matching = True
+    pipeline_options.do_ocr = False
 
-def extract_document_data(
-    input_paths,
-    out_path,
-    llm_model,
-    llm_endpoint,
-    vlm_model,
-    vlm_endpoint,
-    force=False,
-):
-    # ------------------------------------------------------------------
-    # Skip files that already exist by matching checksum
-    # ------------------------------------------------------------------
+    pipeline_options.images_scale = IMAGE_RESOLUTION_SCALE
+    pipeline_options.generate_picture_images = True
 
+    pipeline_options.accelerator_options = AcceleratorOptions(num_threads=8, device=AcceleratorDevice.CUDA)
+
+
+    # Skip files that already exist by matching the cached checksum of the pdf
+    # if there is no difference in checksum and processed text & table json also exist, would skip for convert and process list
+    # else add the file to convert and process list(filtered_input_paths) 
     filtered_input_paths = []
     converted_paths = []
-
     for path in input_paths:
-        checksum_file = Path(out_path) / f"{Path(path).stem}.checksum"
-
-        if checksum_file.exists() and not force:
-            checksum = checksum_file.read_text()
-            if (
-                checksum == generate_file_checksum(path)
-                and (Path(out_path) / f"{Path(path).stem}{text_suffix}").exists()
-                and (Path(out_path) / f"{Path(path).stem}{table_suffix}").exists()
-                and (Path(out_path) / f"{Path(path).stem}{image_suffix}").exists()
-            ):
+        f = (Path(out_path) / f"{Path(path).stem}.checksum")
+        if f.exists():
+            checksum = f.read_text()
+            if checksum != generate_file_checksum(path) \
+                or not (Path(out_path) / f"{Path(path).stem}{text_suffix}").exists() \
+                or not (Path(out_path) / f"{Path(path).stem}{table_suffix}").exists() \
+                or not (Path(out_path) / f"{Path(path).stem}{image_suffix}").exists():
+                filtered_input_paths.append(path)
+            else:
                 converted_paths.append(path)
-                continue
+        else:
+            filtered_input_paths.append(path)
 
-        filtered_input_paths.append(path)
-
-    # Write checksums
     for path in filtered_input_paths:
         checksum = generate_file_checksum(path)
-        (Path(out_path) / f"{Path(path).stem}.checksum").write_text(
-            checksum, encoding="utf-8"
-        )
+        (Path(out_path) / f"{Path(path).stem}.checksum").write_text(checksum, encoding='utf-8')
 
+    doc_converter = DocumentConverter(
+        allowed_formats=[
+            InputFormat.PDF
+        ],
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+    )
     converted_pdf_stats = {}
-
-    if not filtered_input_paths:
+    if filtered_input_paths:
+        with ProcessPoolExecutor(max_workers=max(1, min(4, len(filtered_input_paths)))) as executor:
+            futures = [
+                executor.submit(convert_and_process, path, doc_converter, out_path, llm_model, llm_endpoint, vlm_model, vlm_endpoint)
+                for path in filtered_input_paths
+            ]
+            for future in as_completed(futures):
+                try:
+                    path, pdf_stats = future.result()
+                    converted_paths.append(path)
+                    converted_pdf_stats[path] = pdf_stats
+                    logger.info(f"Processed '{path}'")
+                except Exception as e:
+                    logger.error(f"{e}")
+    else:
         logger.debug("No files to convert and process")
-        return converted_paths, converted_pdf_stats
-
-    for path in filtered_input_paths:
-        try:
-            path, pdf_stats = convert_and_process(
-                path,
-                out_path,
-                llm_model,
-                llm_endpoint,
-                vlm_model,
-                vlm_endpoint,
-            )
-            converted_paths.append(path)
-            converted_pdf_stats[path] = pdf_stats
-            logger.info(f"Processed '{path}'")
-        except Exception as e:
-            logger.error(f"{e}")
 
     return converted_paths, converted_pdf_stats
-
 
 def collect_header_font_sizes(elements):
     """
@@ -522,7 +344,7 @@ def get_header_level(text, font_size, sorted_font_sizes):
     try:
         level = sorted_font_sizes.index(font_size) + 1
     except ValueError:
-        # Unknown font size; assign lowest priority
+        # Unknown font size → assign lowest priority
         level = len(sorted_font_sizes)
 
     return level, text

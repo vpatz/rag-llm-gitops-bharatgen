@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docling-server
+  namespace: indic-rag
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docling-server
+  template:
+    metadata:
+      labels:
+        app: docling-server
+    spec:
+      serviceAccountName: deployer
+      containers:
+        - name: docling-server
+          image: quay.io/docling-project/docling-serve:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - docling-serve
+          args:
+            - run
+            - --host=0.0.0.0
+            - --port=5001
+            - --workers=4
+          ports:
+            - name: http
+              containerPort: 5001
+
+          env:
+            # Disable GPU explicitly
+            - name: CUDA_VISIBLE_DEVICES
+              value: ""
+
+            # Optional tuning
+            - name: DOCLING_NUM_THREADS
+              value: "4"
+
+          resources:
+            requests:
+              cpu: "16"
+              memory: "28Gi"
+              ephemeral-storage: "1Gi"
+            limits:
+              cpu: "24"
+              memory: "32Gi"
+              ephemeral-storage: "2Gi"
+
+          volumeMounts:
+            - name: docling-cache
+              mountPath: /tmp/docling
+      volumes:
+        - name: docling-cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docling-server-svc
+  namespace: indic-rag
+spec:
+  selector:
+    app: docling-server
+  ports:
+    - name: http
+      port: 5001
+      targetPort: http
+  type: ClusterIP
