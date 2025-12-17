@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-backend
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-backend
+  template:
+    metadata:
+      labels:
+        app: rag-backend
+        project-name: wca4z
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        nvidia.com/gpu.present: "{{ .Values.nodeSelector.gpu }}"
+      volumes:
+        - name: rag-akm-storage-pvc
+          persistentVolumeClaim:
+            claimName: {{ .Values.pvc.name }}
+      containers:
+        - name: flux-backend
+          image: {{ .Values.ragBackend.image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HUGGINGFACE_HUB_CACHE
+              value: "/platform_storage/HF_HOME"
+            - name: PATH
+              value: "/usr/bin:/bin:/usr/local/bin"
+          ports:
+            - name: websocket
+              containerPort: {{ .Values.ragBackend.port }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting RAG backend"
+              git clone https://github.com/vpatz/rag-llm-gitops-bharatgen.git
+              cd rag-llm-gitops-bharatgen/rag-app
+              python3 -m src.retrieve.backend_server
+          resources:
+{{ toYaml .Values.ragBackend.resources | indent 12 }}
+          volumeMounts:
+{{ toYaml .Values.commonVolumeMount.volumeMounts | indent 12 }}
+      imagePullSecrets:
+        {{- range .Values.imagePullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-backend-service
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: rag-backend
+  ports:
+    - name: websocket
+      port: {{ .Values.ragBackend.port }}
+      targetPort: websocket
+  type: ClusterIP
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: rag-backend-route
+  namespace: {{ .Values.namespace }}
+  annotations:
+    haproxy.router.openshift.io/timeout: 5m
+spec:
+  host: rag-backend.{{ .Values.routes.domain }}
+  to:
+    kind: Service
+    name: rag-backend-service
+  port:
+    targetPort: websocket
+  tls:
+    termination: edge

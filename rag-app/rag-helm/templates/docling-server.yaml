@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docling-server
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.docling.replicas }}
+  selector:
+    matchLabels:
+      app: docling-server
+  template:
+    metadata:
+      labels:
+        app: docling-server
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+
+      containers:
+        - name: docling-server
+          image: {{ .Values.docling.image }}
+          imagePullPolicy: {{ .Values.docling.imagePullPolicy }}
+
+          command:
+            - docling-serve
+          args:
+            - run
+            - --host=0.0.0.0
+            - --port={{ .Values.docling.port }}
+            - --workers={{ .Values.docling.workers }}
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.docling.port }}
+
+          env:
+            - name: CUDA_VISIBLE_DEVICES
+              value: {{ .Values.docling.env.cudaVisibleDevices | quote }}
+
+            - name: DOCLING_NUM_THREADS
+              value: {{ .Values.docling.env.numThreads | quote }}
+
+          resources:
+{{ toYaml .Values.docling.resources | indent 12 }}
+
+          volumeMounts:
+            - name: docling-cache
+              mountPath: {{ .Values.docling.cacheMountPath }}
+
+      volumes:
+        - name: docling-cache
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docling-server-svc
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: docling-server
+  ports:
+    - name: http
+      port: {{ .Values.docling.port }}
+      targetPort: http
+  type: ClusterIP
