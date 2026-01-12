@@ -8,8 +8,9 @@ serviceAccountName: deployer
 pvc:
   name: rag-akm-storage-pvc
 
-nodeSelector:
-  gpu: "true"
+#nodeSelector:
+  #gpu: "true"
+  #gpu: "false"
 
 routes:
   domain: indic-rag.vpc.res.ibm.com
@@ -105,6 +106,18 @@ milvus:
 # -------------------------------------------------
 modelServe:
   image: vllm/vllm-openai:latest
+  #nodeSelector:
+    #gpu: "true"
+    #nvidia.com/gpu: "true"
+  resources:
+    requests:
+      nvidia.com/gpu: 1
+      cpu: 1
+      memory: 16Gi
+    limits:
+      nvidia.com/gpu: 1
+      cpu: 8
+      memory: 32Gi
 
   service:
     name: model-serve-svc
@@ -197,24 +210,25 @@ docling:
   replicas: 1
 
   image: quay.io/docling-project/docling-serve:latest
-  imagePullPolicy: IfNotPresent
+  #imagePullPolicy: IfNotPresent
+  imagePullPolicy: Always 
 
   port: 5001
 
   workers: 4
 
   env:
-    cudaVisibleDevices: ""
+    #cudaVisibleDevices: ""
     numThreads: "4"
 
   cacheMountPath: /tmp/docling
 
   resources:
     requests:
-      cpu: "16"
-      memory: "28Gi"
+      cpu: "2"
+      memory: "8Gi"
       ephemeral-storage: "1Gi"
     limits:
-      cpu: "24"
-      memory: "32Gi"
+      cpu: "4"
+      memory: "16Gi"
       ephemeral-storage: "2Gi"

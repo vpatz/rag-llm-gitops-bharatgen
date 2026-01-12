@@ -18,8 +18,6 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-      nodeSelector:
-        nvidia.com/gpu.present: "{{ .Values.nodeSelector.gpu }}"
       volumes:
         - name: rag-akm-storage-pvc
           persistentVolumeClaim:
@@ -48,9 +46,9 @@ spec:
           volumeMounts:
 {{ toYaml .Values.commonVolumeMount.volumeMounts | indent 12 }}
       imagePullSecrets:
-        {{- range .Values.imagePullSecrets }}
-        - name: {{ . }}
-        {{- end }}
+        #{{- range .Values.imagePullSecrets }}
+        #- name: {{ . }}
+        #{{- end }}
 
 ---
 apiVersion: v1

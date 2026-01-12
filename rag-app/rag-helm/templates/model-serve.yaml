@@ -13,6 +13,15 @@ spec:
       labels:
         app: model-serve
     spec:
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Equal"
+          value: "True"
+          effect: "NoSchedule"
+
+
+
+
       serviceAccountName: {{ .Values.serviceAccountName }}
       containers:
 
