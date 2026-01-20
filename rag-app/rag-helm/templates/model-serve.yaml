@@ -14,9 +14,8 @@ spec:
         app: model-serve
     spec:
       tolerations:
-        - key: "nvidia.com/gpu"
-          operator: "Equal"
-          value: "True"
+        - key: nvidia.com/gpu
+          value: 'True'
           effect: "NoSchedule"
 
 
@@ -98,9 +97,9 @@ spec:
 {{ toYaml $.Values.modelServe.common.volumeMounts | indent 12 }}
 
       volumes:
-        - name: rag-akm-storage-pvc
+        - name: rag-akm-storage-pvc-model-serve
           persistentVolumeClaim:
-            claimName: {{ .Values.pvc.name }}
+            claimName: {{ .Values.pvc.modelStorageName }}
         - name: cache
           emptyDir: {}
         - name: config-volume
