@@ -8,6 +8,7 @@ serviceAccountName: deployer
 pvc:
   name: rag-akm-storage-pvc
   modelStorageName: rag-akm-storage-pvc-model-serve
+  modelVisionStorageName: rag-akm-storage-pvc-model-serve-vision
 
 commonVolumeMount:
   volumeMounts:
@@ -104,7 +105,7 @@ milvus:
         memory: 16Gi
 
 # -------------------------------------------------
-# Model Serving
+# Model Serving -- text 
 # -------------------------------------------------
 modelServe:
   image: vllm/vllm-openai:latest
@@ -114,12 +115,12 @@ modelServe:
   resources:
     requests:
       nvidia.com/gpu: 1
-      cpu: 1
-      memory: 16Gi
+      cpu: 10
+      memory: 32Gi
     limits:
       nvidia.com/gpu: 1
-      cpu: 8
-      memory: 32Gi
+      cpu: 12
+      memory: 64Gi
   
   service:
     name: model-serve-svc
@@ -134,9 +135,9 @@ modelServe:
       rerank:
         port: 8003
         targetPort: rerank
-      vision:
-        port: 8004
-        targetPort: vision
+      #vision:
+        #port: 8004
+        #targetPort: vision
 
   routes:
     enabled: true
@@ -149,42 +150,45 @@ modelServe:
     rerank:
       host: rerank-route.indic-rag.vpc.res.ibm.com
       servicePort: rerank
-    vision:
-      host: vision-route.indic-rag.vpc.res.ibm.com
-      servicePort: vision
+    #vision:
+      #host: vision-route.indic-rag.vpc.res.ibm.com
+      #servicePort: vision
 
   textGpu:
     cudaVisibleDevices: "0"
     models:
       chat:
         name: ibm-granite/granite-3.3-8b-instruct
+        #name: ibm-granite/granite-3.3-2b-instruct
+        #name: ibm-granite/granite-3.1-1b-a400m-instruct
         port: 8001
-        gpuMemoryUtilization: 0.7
+        gpuMemoryUtilization: 0.5
       embed:
         name: intfloat/multilingual-e5-large
+        #name: intfloat/multilingual-e5-small
         port: 8002
-        gpuMemoryUtilization: 0.1
+        gpuMemoryUtilization: 0.5
       rerank:
         name: BAAI/bge-reranker-v2-m3
         port: 8003
-        gpuMemoryUtilization: 0.1
-    #resources:
+        gpuMemoryUtilization: 0.5
+    resources:
       #requests:
         #cpu: 8
         #memory: 8Gi
         #nvidia.com/gpu: "1"
-      #limits:
+      limits:
         #cpu: 16
         #memory: 12Gi
-        #nvidia.com/gpu: "1"
+        nvidia.com/gpu: 1
 
-  visionGpu:
-    cudaVisibleDevices: "0"
-    model:
-      name: mistralai/Pixtral-12B-2409
+  #visionGpu:
+    #cudaVisibleDevices: "0"
+    #model:
+      #name: mistralai/Pixtral-12B-2409
       #name: RedHatAI/pixtral-12b-quantized.w4a16
-      port: 8004
-      tokenizerMode: mistral
+      #port: 8004
+      #tokenizerMode: mistral
     #resources:
       #requests:
         #cpu: 2
@@ -205,6 +209,124 @@ modelServe:
         mountPath: /.config
       - name: triton-volume
         mountPath: /.triton
+
+
+# -------------------------------------------------
+# Model Serving -- vision 
+# -------------------------------------------------
+modelServeVision:
+  image: vllm/vllm-openai:latest
+  #nodeSelector:
+    #gpu: "true"
+    #nvidia.com/gpu: "true"
+  resources:
+    #requests:
+      #nvidia.com/gpu: 1
+      #cpu: 1
+      #memory: 16Gi
+    limits:
+      nvidia.com/gpu: 1
+      #cpu: 1
+      #memory: 32Gi
+  
+  service:
+    name: model-serve-svc-vision
+    type: ClusterIP
+    ports:
+      #chat:
+        #port: 8001
+        #targetPort: chat
+      #embed:
+        #port: 8002
+        #targetPort: embed
+      #rerank:
+        #port: 8003
+        #targetPort: rerank
+      vision:
+        port: 8004
+        targetPort: vision
+
+  routes:
+    enabled: true
+    #chat:
+      #host: chat-route.indic-rag.vpc.res.ibm.com
+      #servicePort: chat
+    #embed:
+      #host: embed-route.indic-rag.vpc.res.ibm.com
+      #servicePort: embed
+    #rerank:
+      #host: rerank-route.indic-rag.vpc.res.ibm.com
+      #servicePort: rerank
+    vision:
+      host: vision-route.indic-rag.vpc.res.ibm.com
+      servicePort: vision
+
+  #textGpu:
+    #cudaVisibleDevices: "0"
+    #models:
+      #chat:
+        #name: ibm-granite/granite-3.3-8b-instruct
+        #port: 8001
+        #gpuMemoryUtilization: 0.7
+      #embed:
+        #name: intfloat/multilingual-e5-large
+        #port: 8002
+        #gpuMemoryUtilization: 0.1
+      #rerank:
+        #name: BAAI/bge-reranker-v2-m3
+        #port: 8003
+        #gpuMemoryUtilization: 0.1
+    #resources:
+      #requests:
+        #cpu: 8
+        #memory: 8Gi
+        #nvidia.com/gpu: "1"
+      #limits:
+        #cpu: 16
+        #memory: 12Gi
+        #nvidia.com/gpu: "1"
+
+  visionGpu:
+    cudaVisibleDevices: "0"
+    model:
+      name: mistralai/Pixtral-12B-2409
+      #name: RedHatAI/pixtral-12b-quantized.w4a16
+      #name: Qwen/Qwen3-VL-Embedding-8B
+      #name: Qwen/Qwen2-VL-2B
+      #name: ibm-granite/granite-vision-3.2-2b
+      port: 8004
+      gpuMemoryUtilization: 0.75
+      tokenizerMode: mistral
+      #tokenizerMode: auto 
+    resources:
+      #requests:
+        #cpu: 2
+        #memory: 8Gi
+        #nvidia.com/gpu: "1"
+      limits:
+        #cpu: 4
+        #memory: 12Gi
+        nvidia.com/gpu: "1"
+
+  common:
+    volumeMounts:
+      - name: rag-akm-storage-pvc-model-serve-vision
+        mountPath: /platform_storage
+      - name: cache
+        mountPath: /.cache
+      - name: config-volume
+        mountPath: /.config
+      - name: triton-volume
+        mountPath: /.triton
+
+
+
+
+
+
+
+
+
 
 # -------------------------------------------------
 # Docling Server

@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-serve-vision
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-serve-vision
+  template:
+    metadata:
+      labels:
+        app: model-serve-vision
+    spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          value: 'True'
+          effect: "NoSchedule"
+
+
+
+
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      containers:
+
+        # ============================
+        # CUDA:1 — Vision model
+        # ============================
+        - name: vllm-vision
+          image: {{ .Values.modelServeVision.image }}
+          env:
+            - name: CUDA_VISIBLE_DEVICES
+              value: "{{ .Values.modelServeVision.visionGpu.cudaVisibleDevices }}"
+            - name: VLLM_LOGGING_LEVEL
+              value: INFO
+            - name: HUGGINGFACE_HUB_CACHE
+              value: "/platform_storage/HF_HOME"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting vision model on CUDA:{{ .Values.modelServeVision.visionGpu.cudaVisibleDevices }}"
+              vllm serve {{ .Values.modelServeVision.visionGpu.model.name }} \
+                --host 0.0.0.0 \
+                --port {{ .Values.modelServeVision.visionGpu.model.port }} \
+                --tokenizer_mode {{ .Values.modelServeVision.visionGpu.model.tokenizerMode }} \
+                --gpu-memory-utilization {{ .Values.modelServeVision.visionGpu.model.gpuMemoryUtilization }} \
+                --max-model-len 3k \
+                --cpu-offload-gb 10  
+
+              nvidia-smi &
+
+              wait
+
+          ports:
+            - name: vision
+              containerPort: {{ .Values.modelServeVision.visionGpu.model.port }}
+          resources:
+{{ toYaml .Values.modelServeVision.visionGpu.resources | indent 12 }}
+          volumeMounts:
+{{ toYaml $.Values.modelServeVision.common.volumeMounts | indent 12 }}
+
+      volumes:
+        - name: rag-akm-storage-pvc-model-serve-vision
+          persistentVolumeClaim:
+            claimName: {{ .Values.pvc.modelVisionStorageName }}
+        - name: cache
+          emptyDir: {}
+        - name: config-volume
+          emptyDir: {}
+        - name: triton-volume
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.modelServeVision.service.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  type: {{ .Values.modelServeVision.service.type }}
+  selector:
+    app: model-serve-vision
+  ports:
+    {{- range $name, $cfg := .Values.modelServeVision.service.ports }}
+    - name: {{ $name }}
+      port: {{ $cfg.port }}
+      targetPort: {{ $cfg.targetPort }}
+    {{- end }}
+{{- if .Values.modelServeVision.routes.enabled }}
+{{- range $name, $route := .Values.modelServeVision.routes }}
+{{- if ne $name "enabled" }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ $name }}-route
+  namespace: {{ $.Values.namespace }}
+spec:
+  host: {{ $route.host }}
+  to:
+    kind: Service
+    name: {{ $.Values.modelServeVision.service.name }}
+  port:
+    targetPort: {{ $route.servicePort }}
+  tls:
+    termination: edge
+{{- end }}
+{{- end }}
+{{- end }}

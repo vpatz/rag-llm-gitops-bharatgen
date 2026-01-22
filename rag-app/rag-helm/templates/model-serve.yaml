@@ -56,6 +56,7 @@ spec:
                 --gpu-memory-utilization {{ .Values.modelServe.textGpu.models.rerank.gpuMemoryUtilization }} &
 
               wait
+          
           ports:
             - name: chat
               containerPort: {{ .Values.modelServe.textGpu.models.chat.port }}
@@ -68,33 +69,6 @@ spec:
           volumeMounts:
 {{ toYaml $.Values.modelServe.common.volumeMounts | indent 12 }}
 
-        # ============================
-        # CUDA:1 — Vision model
-        # ============================
-        - name: vllm-vision
-          image: {{ .Values.modelServe.image }}
-          env:
-            - name: CUDA_VISIBLE_DEVICES
-              value: "{{ .Values.modelServe.visionGpu.cudaVisibleDevices }}"
-            - name: VLLM_LOGGING_LEVEL
-              value: INFO
-            - name: HUGGINGFACE_HUB_CACHE
-              value: "/platform_storage/HF_HOME"
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              echo "Starting vision model on CUDA:{{ .Values.modelServe.visionGpu.cudaVisibleDevices }}"
-              vllm serve {{ .Values.modelServe.visionGpu.model.name }} \
-                --host 0.0.0.0 \
-                --port {{ .Values.modelServe.visionGpu.model.port }} \
-                --tokenizer_mode {{ .Values.modelServe.visionGpu.model.tokenizerMode }}
-          ports:
-            - name: vision
-              containerPort: {{ .Values.modelServe.visionGpu.model.port }}
-          resources:
-{{ toYaml .Values.modelServe.visionGpu.resources | indent 12 }}
-          volumeMounts:
-{{ toYaml $.Values.modelServe.common.volumeMounts | indent 12 }}
 
       volumes:
         - name: rag-akm-storage-pvc-model-serve
