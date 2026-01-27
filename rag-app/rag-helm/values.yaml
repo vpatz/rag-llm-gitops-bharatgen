@@ -21,7 +21,8 @@ commonVolumeMount:
   #gpu: "false"
 
 routes:
-  domain: indic-rag.vpc.res.ibm.com
+  domain: impactsummit.nxtgen.cloud
+  #domain: indic-rag.vpc.res.ibm.com
 
 # -------------------------------------------------
 # Flux-Backend for RAG
@@ -142,13 +143,16 @@ modelServe:
   routes:
     enabled: true
     chat:
-      host: chat-route.indic-rag.vpc.res.ibm.com
+      host: chat-route.impactsummit.nxtgen.cloud
+      #host: chat-route.indic-rag.vpc.res.ibm.com
       servicePort: chat
     embed:
-      host: embed-route.indic-rag.vpc.res.ibm.com
+      host: embed-route.impactsummit.nxtgen.cloud
+      #host: embed-route.indic-rag.vpc.res.ibm.com
       servicePort: embed
     rerank:
-      host: rerank-route.indic-rag.vpc.res.ibm.com
+      host: rerank-route.impactsummit.nxtgen.cloud
+      #host: rerank-route.indic-rag.vpc.res.ibm.com
       servicePort: rerank
     #vision:
       #host: vision-route.indic-rag.vpc.res.ibm.com
@@ -258,7 +262,8 @@ modelServeVision:
       #host: rerank-route.indic-rag.vpc.res.ibm.com
       #servicePort: rerank
     vision:
-      host: vision-route.indic-rag.vpc.res.ibm.com
+      host: vision-route.impactsummit.nxtgen.cloud
+      #host: vision-route.indic-rag.vpc.res.ibm.com
       servicePort: vision
 
   #textGpu:
