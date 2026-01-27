@@ -50,6 +50,7 @@ spec:
         - name: docling-cache
           emptyDir: {}
 
+
 ---
 apiVersion: v1
 kind: Service
