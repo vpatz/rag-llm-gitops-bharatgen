@@ -1,4 +1,4 @@
-namespace: indic-rag
+namespace: indic-rag2
 
 #imagePullSecrets:
   #- cil15-vela-all-icr-io
@@ -87,7 +87,6 @@ milvus:
       limits:
         cpu: 12 
         memory: 16Gi
-      nvidia.com/gpu: 0
 
   minio:
     accessKey: minioadmin
@@ -99,7 +98,6 @@ milvus:
       limits:
         cpu: 12
         memory: 1Gi
-      nvidia.com/gpu: 0
 
   milvus:
     resources:
@@ -109,7 +107,6 @@ milvus:
       limits:
         cpu: 12
         memory: 16Gi
-      nvidia.com/gpu: 0
 
 # -------------------------------------------------
 # Model Serving -- text 
@@ -345,28 +342,28 @@ modelServeVision:
 docling:
   replicas: 1
 
+  #image: quay.io/docling-project/docling-serve:latest
   image: quay.io/docling-project/docling-serve:v1.9.0
   #imagePullPolicy: IfNotPresent
   imagePullPolicy: Always 
 
   port: 5001
 
-  workers: 8
+  workers: 4
 
   env:
     #cudaVisibleDevices: ""
-    numThreads: "8"
+    numThreads: "4"
     #numThreads: "4"
 
   cacheMountPath: /tmp/docling
 
   resources:
     requests:
-      cpu: 16
-      memory: "16Gi"
+      cpu: 4
+      memory: "8Gi"
       ephemeral-storage: "1Gi"
     limits:
-      cpu: 32
-      memory: "32Gi"
+      cpu: 8
+      memory: "16Gi"
       ephemeral-storage: "2Gi"
-      nvidia.com/gpu: 0
