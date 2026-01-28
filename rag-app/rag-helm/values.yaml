@@ -192,14 +192,14 @@ modelServeChat:
     #gpu: "true"
     #nvidia.com/gpu: "true"
   resources:
-    requests:
-      nvidia.com/gpu: 1
-      cpu: 10
-      memory: 32Gi
+    #requests:
+      #nvidia.com/gpu: 1
+      #cpu: 10
+      #memory: 32Gi
     limits:
       nvidia.com/gpu: 1
-      cpu: 12
-      memory: 64Gi
+      #cpu: 12
+      #memory: 64Gi
   
   service:
     name: model-serve-svc-chat
@@ -269,30 +269,12 @@ modelServeVision:
     name: model-serve-svc-vision
     type: ClusterIP
     ports:
-      #chat:
-        #port: 8001
-        #targetPort: chat
-      #embed:
-        #port: 8002
-        #targetPort: embed
-      #rerank:
-        #port: 8003
-        #targetPort: rerank
       vision:
         port: 8004
         targetPort: vision
 
   routes:
     enabled: true
-    #chat:
-      #host: chat-route.indic-rag.vpc.res.ibm.com
-      #servicePort: chat
-    #embed:
-      #host: embed-route.indic-rag.vpc.res.ibm.com
-      #servicePort: embed
-    #rerank:
-      #host: rerank-route.indic-rag.vpc.res.ibm.com
-      #servicePort: rerank
     vision:
       host: vision-route.impactsummit.nxtgen.cloud
       #host: vision-route.indic-rag.vpc.res.ibm.com

@@ -75,7 +75,7 @@ metadata:
 spec:
   type: {{ .Values.modelServeChat.service.type }}
   selector:
-    app: model-serve
+    app: model-serve-chat
   ports:
     {{- range $name, $cfg := .Values.modelServeChat.service.ports }}
     - name: {{ $name }}
