@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-serve-chat
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-serve-chat
+  template:
+    metadata:
+      labels:
+        app: model-serve-chat
+    spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          value: 'True'
+          effect: "NoSchedule"
+
+
+
+
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      containers:
+
+        # ============================
+        # CUDA:0 — Text chat model
+        # ============================
+        - name: vllm-text-chat
+          image: {{ .Values.modelServeChat.image }}
+          env:
+            - name: CUDA_VISIBLE_DEVICES
+              value: "{{ .Values.modelServeChat.textGpuChat.cudaVisibleDevices }}"
+            - name: VLLM_LOGGING_LEVEL
+              value: INFO
+            - name: HUGGINGFACE_HUB_CACHE
+              value: "/platform_storage/HF_HOME"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting text chat models on CUDA:{{ .Values.modelServeChat.textGpuChat.cudaVisibleDevices }}"
+              vllm serve {{ .Values.modelServeChat.textGpuChat.models.chat.name }} \
+                --host 0.0.0.0 \
+                --port {{ .Values.modelServeChat.textGpuChat.models.chat.port }} \
+                --gpu-memory-utilization {{ .Values.modelServeChat.textGpuChat.models.chat.gpuMemoryUtilization }} &
+
+              wait
+          
+          ports:
+            - name: chat
+              containerPort: {{ .Values.modelServeChat.textGpuChat.models.chat.port }}
+          resources:
+{{ toYaml .Values.modelServeChat.textGpuChat.resources | indent 12 }}
+          volumeMounts:
+{{ toYaml $.Values.modelServeChat.common.volumeMounts | indent 12 }}
+
+
+      volumes:
+        - name: rag-akm-storage-pvc-model-serve-chat
+          persistentVolumeClaim:
+            claimName: {{ .Values.pvc.modelStorageName }}
+        - name: cache
+          emptyDir: {}
+        - name: config-volume
+          emptyDir: {}
+        - name: triton-volume
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.modelServeChat.service.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  type: {{ .Values.modelServeChat.service.type }}
+  selector:
+    app: model-serve
+  ports:
+    {{- range $name, $cfg := .Values.modelServeChat.service.ports }}
+    - name: {{ $name }}
+      port: {{ $cfg.port }}
+      targetPort: {{ $cfg.targetPort }}
+    {{- end }}
+{{- if .Values.modelServeChat.routes.enabled }}
+{{- range $name, $route := .Values.modelServeChat.routes }}
+{{- if ne $name "enabled" }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ $name }}-route
+  namespace: {{ $.Values.namespace }}
+spec:
+  host: {{ $route.host }}
+  to:
+    kind: Service
+    name: {{ $.Values.modelServeChat.service.name }}
+  port:
+    targetPort: {{ $route.servicePort }}
+  tls:
+    termination: edge
+{{- end }}
+{{- end }}
+{{- end }}

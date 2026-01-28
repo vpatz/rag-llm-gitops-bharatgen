@@ -25,7 +25,7 @@ spec:
       containers:
 
         # ============================
-        # CUDA:0 — Text models
+        # CUDA:0 — Text models (embedding and reranker)
         # ============================
         - name: vllm-text
           image: {{ .Values.modelServe.image }}
@@ -39,12 +39,8 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              echo "Starting text models on CUDA:{{ .Values.modelServe.textGpu.cudaVisibleDevices }}"
-              vllm serve {{ .Values.modelServe.textGpu.models.chat.name }} \
-                --host 0.0.0.0 \
-                --port {{ .Values.modelServe.textGpu.models.chat.port }} \
-                --gpu-memory-utilization {{ .Values.modelServe.textGpu.models.chat.gpuMemoryUtilization }} &
-
+              echo "Starting text embedding and reranker models on CUDA:{{ .Values.modelServe.textGpu.cudaVisibleDevices }}"
+              
               vllm serve {{ .Values.modelServe.textGpu.models.embed.name }} \
                 --host 0.0.0.0 \
                 --port {{ .Values.modelServe.textGpu.models.embed.port }} \
@@ -58,8 +54,6 @@ spec:
               wait
           
           ports:
-            - name: chat
-              containerPort: {{ .Values.modelServe.textGpu.models.chat.port }}
             - name: embed
               containerPort: {{ .Values.modelServe.textGpu.models.embed.port }}
             - name: rerank

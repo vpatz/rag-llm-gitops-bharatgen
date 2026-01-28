@@ -8,6 +8,7 @@ serviceAccountName: deployer
 pvc:
   name: rag-akm-storage-pvc
   modelStorageName: rag-akm-storage-pvc-model-serve
+  modelChatStorageName: rag-akm-storage-pvc-model-serve-chat
   modelVisionStorageName: rag-akm-storage-pvc-model-serve-vision
 
 commonVolumeMount:
@@ -109,7 +110,7 @@ milvus:
         memory: 16Gi
 
 # -------------------------------------------------
-# Model Serving -- text 
+# Model Serving -- text embedding and reranker
 # -------------------------------------------------
 modelServe:
   image: vllm/vllm-openai:latest
@@ -130,25 +131,15 @@ modelServe:
     name: model-serve-svc
     type: ClusterIP
     ports:
-      chat:
-        port: 8001
-        targetPort: chat
       embed:
         port: 8002
         targetPort: embed
       rerank:
         port: 8003
         targetPort: rerank
-      #vision:
-        #port: 8004
-        #targetPort: vision
 
   routes:
     enabled: true
-    chat:
-      host: chat-route.impactsummit.nxtgen.cloud
-      #host: chat-route.indic-rag.vpc.res.ibm.com
-      servicePort: chat
     embed:
       host: embed-route.impactsummit.nxtgen.cloud
       #host: embed-route.indic-rag.vpc.res.ibm.com
@@ -157,28 +148,19 @@ modelServe:
       host: rerank-route.impactsummit.nxtgen.cloud
       #host: rerank-route.indic-rag.vpc.res.ibm.com
       servicePort: rerank
-    #vision:
-      #host: vision-route.indic-rag.vpc.res.ibm.com
-      #servicePort: vision
 
   textGpu:
     cudaVisibleDevices: "0,1"
     models:
-      chat:
-        #name: ibm-granite/granite-3.3-8b-instruct
-        name: ibm-granite/granite-3.3-2b-instruct
-        #name: ibm-granite/granite-3.1-1b-a400m-instruct
-        port: 8001
-        gpuMemoryUtilization: 0.3
       embed:
-        #name: intfloat/multilingual-e5-large
-        name: intfloat/multilingual-e5-small
+        name: intfloat/multilingual-e5-large
+        #name: intfloat/multilingual-e5-small
         port: 8002
-        gpuMemoryUtilization: 0.3
+        gpuMemoryUtilization: 0.4
       rerank:
         name: BAAI/bge-reranker-v2-m3
         port: 8003
-        gpuMemoryUtilization: 0.3
+        gpuMemoryUtilization: 0.4
     resources:
       #requests:
         #cpu: 8
@@ -189,26 +171,73 @@ modelServe:
         #memory: 12Gi
         nvidia.com/gpu: 2
 
-  #visionGpu:
-    #cudaVisibleDevices: "0"
-    #model:
-      #name: mistralai/Pixtral-12B-2409
-      #name: RedHatAI/pixtral-12b-quantized.w4a16
-      #port: 8004
-      #tokenizerMode: mistral
-    #resources:
-      #requests:
-        #cpu: 2
-        #memory: 8Gi
-        #nvidia.com/gpu: "1"
-      #limits:
-        #cpu: 4
-        #memory: 12Gi
-        #nvidia.com/gpu: "1"
-
   common:
     volumeMounts:
       - name: rag-akm-storage-pvc-model-serve
+        mountPath: /platform_storage
+      - name: cache
+        mountPath: /.cache
+      - name: config-volume
+        mountPath: /.config
+      - name: triton-volume
+        mountPath: /.triton
+
+
+# -------------------------------------------------
+# Model Serving -- text chat
+# -------------------------------------------------
+modelServeChat:
+  image: vllm/vllm-openai:latest
+  #nodeSelector:
+    #gpu: "true"
+    #nvidia.com/gpu: "true"
+  resources:
+    requests:
+      nvidia.com/gpu: 1
+      cpu: 10
+      memory: 32Gi
+    limits:
+      nvidia.com/gpu: 1
+      cpu: 12
+      memory: 64Gi
+  
+  service:
+    name: model-serve-svc-chat
+    type: ClusterIP
+    ports:
+      chat:
+        port: 8001
+        targetPort: chat
+
+  routes:
+    enabled: true
+    chat:
+      host: chat-route.impactsummit.nxtgen.cloud
+      #host: chat-route.indic-rag.vpc.res.ibm.com
+      servicePort: chat
+
+  textGpuChat:
+    cudaVisibleDevices: "0,1"
+    models:
+      chat:
+        name: ibm-granite/granite-3.3-8b-instruct
+        #name: ibm-granite/granite-3.3-2b-instruct
+        #name: ibm-granite/granite-3.1-1b-a400m-instruct
+        port: 8001
+        gpuMemoryUtilization: 0.5
+    resources:
+      #requests:
+        #cpu: 8
+        #memory: 8Gi
+        #nvidia.com/gpu: "1"
+      limits:
+        #cpu: 16
+        #memory: 12Gi
+        nvidia.com/gpu: 2
+
+  common:
+    volumeMounts:
+      - name: rag-akm-storage-pvc-model-serve-chat
         mountPath: /platform_storage
       - name: cache
         mountPath: /.cache
