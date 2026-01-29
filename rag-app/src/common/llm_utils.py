@@ -32,7 +32,7 @@ def create_llm_session(pool_maxsize, pool_connections: int = 1, pool_block: bool
         )
 
         session = requests.Session()
-        session.mount("http://", adapter)
+        #session.mount("http://", adapter)
         session.mount("https://", adapter)
 
         # inserted to make rag ingestion work
