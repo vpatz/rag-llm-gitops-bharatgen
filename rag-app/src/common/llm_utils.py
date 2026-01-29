@@ -35,6 +35,9 @@ def create_llm_session(pool_maxsize, pool_connections: int = 1, pool_block: bool
         session.mount("http://", adapter)
         session.mount("https://", adapter)
 
+        # inserted to make rag ingestion work
+        session.verify = False 
+
         SESSION = session
 
 def classify_text_with_llm(text_blocks, gen_model, llm_endpoint, pdf_path, type, batch_size=32):
