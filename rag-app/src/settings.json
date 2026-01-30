@@ -9,18 +9,18 @@
   "score_threshold": 0.0,
   "max_concurrent_requests": 32,
 
-  "emb_endpoint": "https://embed-route.impactsummit.nxtgen.cloud",
+  "emb_endpoint": "http://mode-serve-svc:8002",
   "emb_model": "intfloat/multilingual-e5-large",
   "emb_max_tokens": 512,
   
-  "llm_endpoint": "https://chat-route.impactsummit.nxtgen.cloud",
+  "llm_endpoint": "http://model-serve-svc-chat:8001",
   "llm_model": "ibm-granite/granite-3.3-8b-instruct",
 
-  "vlm_endpoint": "https://vision-route.impactsummit.nxtgen.cloud",
+  "vlm_endpoint": "http://model-serve-svc-vision:8004",
   "vlm_model": "mistralai/Pixtral-12B-2409",
 
 
-  "reranker_endpoint": "https://rerank-route.impactsummit.nxtgen.cloud",
+  "reranker_endpoint": "http://model-server-svc:8003",
   "reranker_model": "BAAI/bge-reranker-v2-m3",
 
   "milvus_host": "rag-milvus-svc",
