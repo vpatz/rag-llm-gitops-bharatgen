@@ -1,0 +1,204 @@
+namespace: indic-rag
+
+imagePullSecrets:
+  - cil15-vela-all-icr-io
+
+serviceAccountName: deployer
+
+pvc:
+  name: rag-akm-storage-pvc
+
+nodeSelector:
+  gpu: "true"
+
+routes:
+  domain: indic-rag.vpc.res.ibm.com
+
+# -------------------------------------------------
+# Flux-Backend for RAG
+# -------------------------------------------------
+ragBackend:
+  name: edu-rag
+  image: arnab135/rag-app:latest
+  port: 25000
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+
+# -------------------------------------------------
+# DB Utility Gradio Service
+# -------------------------------------------------
+dbUI:
+  name: edu-rag
+  image: arnab135/rag-app:latest
+  port: 20000
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+      ephemeral-storage: "1Gi"
+    limits:
+      cpu: 2
+      memory: 4Gi
+      ephemeral-storage: "2Gi"
+
+# -------------------------------------------------
+# RAG UI Gradio Service
+# -------------------------------------------------
+ragUI:
+  name: edu-rag
+  image: arnab135/rag-app:latest
+  port: 20001
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+
+commonVolumeMount:
+  volumeMounts:
+    - name: rag-akm-storage-pvc
+      mountPath: /platform_storage
+
+# -------------------------------------------------
+# Milvus-DB Server
+# -------------------------------------------------
+milvus:
+  image: milvusdb/milvus:v2.6.7
+  etcdImage: bitnamilegacy/etcd:3.6.4-debian-12-r4
+  minioImage: minio/minio:latest
+
+  etcd:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  minio:
+    accessKey: minioadmin
+    secretKey: minioadmin
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+
+  milvus:
+    resources:
+      requests:
+        cpu: 2
+        memory: 8Gi
+      limits:
+        cpu: 4
+        memory: 16Gi
+
+# -------------------------------------------------
+# Model Serving
+# -------------------------------------------------
+modelServe:
+  image: vllm/vllm-openai:latest
+
+  service:
+    name: model-serve-svc
+    type: ClusterIP
+    ports:
+      chat:
+        port: 8001
+        targetPort: chat
+      embed:
+        port: 8002
+        targetPort: embed
+      rerank:
+        port: 8003
+        targetPort: rerank
+
+  routes:
+    enabled: true
+    chat:
+      host: chat-route.indic-rag.vpc.res.ibm.com
+      servicePort: chat
+    embed:
+      host: embed-route.indic-rag.vpc.res.ibm.com
+      servicePort: embed
+    rerank:
+      host: rerank-route.indic-rag.vpc.res.ibm.com
+      servicePort: rerank
+
+  textGpu:
+    cudaVisibleDevices: "0"
+    models:
+      chat:
+        name: ibm-granite/granite-3.3-8b-instruct
+        port: 8001
+        gpuMemoryUtilization: 0.7
+      embed:
+        name: intfloat/multilingual-e5-large
+        port: 8002
+        gpuMemoryUtilization: 0.15
+      rerank:
+        name: BAAI/bge-reranker-v2-m3
+        port: 8003
+        gpuMemoryUtilization: 0.1
+    resources:
+      requests:
+        cpu: 16
+        memory: 100Gi
+        nvidia.com/gpu: 1
+      limits:
+        cpu: 16
+        memory: 100Gi
+        nvidia.com/gpu: 1
+
+  common:
+    volumeMounts:
+      - name: rag-akm-storage-pvc
+        mountPath: /platform_storage
+      - name: cache
+        mountPath: /.cache
+      - name: config-volume
+        mountPath: /.config
+      - name: triton-volume
+        mountPath: /.triton
+
+# -------------------------------------------------
+# Docling Server
+# -------------------------------------------------
+docling:
+  replicas: 1
+
+  # image: quay.io/docling-project/docling-serve:v1.9.0
+  image: quay.io/docling-project/docling-serve-cu126:latest
+  imagePullPolicy: IfNotPresent
+
+  port: 5001
+
+  workers: 4 # same as num_gpu; workers x numThreads = number of concurrent GPU jobs
+
+  env:
+    cudaVisibleDevices: 0 # to change if using cpu
+    numThreads: "12"
+
+  cacheMountPath: /tmp/docling
+
+  resources:
+    requests:
+      cpu: "16"
+      memory: "32Gi"
+      ephemeral-storage: "1Gi"
+      nvidia.com/gpu: 1 # to change if using cpu
+    limits:
+      cpu: "16"
+      memory: "32Gi"
+      ephemeral-storage: "2Gi"
+      nvidia.com/gpu: 1 # to change if using cpu

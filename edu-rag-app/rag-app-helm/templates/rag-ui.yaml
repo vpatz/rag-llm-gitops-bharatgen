@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.ragUI.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.ragUI.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.ragUI.name }}
+        project-name: wca4z
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        nvidia.com/gpu.present: "{{ .Values.nodeSelector.gpu }}"
+      volumes:
+        - name: rag-akm-storage-pvc
+          persistentVolumeClaim:
+            claimName: {{ .Values.pvc.name }}
+      containers:
+        - name: rag-app
+          image: {{ .Values.ragUI.image }}
+          imagePullPolicy: Always # IfNotPresent
+          env:
+            - name: HUGGINGFACE_HUB_CACHE
+              value: "/platform_storage/HF_HOME"
+            - name: PATH
+              value: "/usr/bin:/bin:/usr/local/bin"
+          ports:
+            - name: websocket
+              containerPort: {{ .Values.ragUI.port }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting RAG UI"
+              git clone https://github.com/vpatz/rag-llm-gitops-bharatgen.git
+              cd rag-llm-gitops-bharatgen/edu-rag-app
+              python3 ui/ui_rag.py
+          resources:
+{{ toYaml .Values.ragUI.resources | indent 12 }}
+          volumeMounts:
+{{ toYaml .Values.commonVolumeMount.volumeMounts | indent 12 }}
+      imagePullSecrets:
+        {{- range .Values.imagePullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.ragUI.name }}-service
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: {{ .Values.ragUI.name }}
+  ports:
+    - name: websocket
+      port: {{ .Values.ragUI.port }}
+      targetPort: websocket
+  type: ClusterIP
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ .Values.ragUI.name }}-route
+  namespace: {{ .Values.namespace }}
+  annotations:
+    haproxy.router.openshift.io/timeout: 5m
+spec:
+  host: {{ .Values.ragUI.name }}.{{ .Values.routes.domain }}
+  to:
+    kind: Service
+    name: {{ .Values.ragUI.name }}-service
+  port:
+    targetPort: websocket
+  tls:
+    termination: edge

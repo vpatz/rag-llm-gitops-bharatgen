@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-milvus
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-milvus
+  template:
+    metadata:
+      labels:
+        app: rag-milvus
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+
+      containers:
+        # =====================
+        # Etcd sidecar
+        # =====================
+        - name: etcd
+          image: {{ .Values.milvus.etcdImage }}
+          command:
+            - etcd
+            - --data-dir=/etcd-data
+            - --listen-client-urls=http://0.0.0.0:2379
+            - --advertise-client-urls=http://127.0.0.1:2379
+          ports:
+            - name: etcd
+              containerPort: 2379
+          resources:
+{{ toYaml .Values.milvus.etcd.resources | indent 12 }}
+          volumeMounts:
+            - name: etcd-data
+              mountPath: /etcd-data
+
+        # =====================
+        # MinIO sidecar
+        # =====================
+        - name: minio
+          image: {{ .Values.milvus.minioImage }}
+          args: ["server", "/data"]
+          env:
+            - name: MINIO_ACCESS_KEY
+              value: {{ .Values.milvus.minio.accessKey | quote }}
+            - name: MINIO_SECRET_KEY
+              value: {{ .Values.milvus.minio.secretKey | quote }}
+          ports:
+            - name: minio
+              containerPort: 9000
+          resources:
+{{ toYaml .Values.milvus.minio.resources | indent 12 }}
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+
+        # =====================
+        # Milvus main container
+        # =====================
+        - name: milvus
+          image: {{ .Values.milvus.image }}
+          command: ["milvus", "run", "standalone"]
+          ports:
+            - name: milvus-grpc
+              containerPort: 19530
+            - name: milvus-metrics
+              containerPort: 9091
+          env:
+            - name: ETCD_ENDPOINTS
+              value: http://127.0.0.1:2379
+            - name: MINIO_ADDRESS
+              value: 127.0.0.1:9000
+            - name: MINIO_ACCESS_KEY
+              value: {{ .Values.milvus.minio.accessKey | quote }}
+            - name: MINIO_SECRET_KEY
+              value: {{ .Values.milvus.minio.secretKey | quote }}
+            - name: MINIO_USE_SSL
+              value: "false"
+          resources:
+{{ toYaml .Values.milvus.milvus.resources | indent 12 }}
+          volumeMounts:
+            - name: milvus-storage
+              mountPath: /var/lib/milvus
+
+      volumes:
+        # Shared ephemeral volumes (kept for parity with rest of chart)
+        - name: cache
+          emptyDir: {}
+        - name: config-volume
+          emptyDir: {}
+        - name: triton-volume
+          emptyDir: {}
+
+        # PVC (present in original, though unused by milvus container)
+        - name: rag-akm-storage-pvc
+          persistentVolumeClaim:
+            claimName: {{ .Values.pvc.name }}
+
+        # Milvus stack volumes
+        - name: milvus-storage
+          emptyDir: {}
+        - name: etcd-data
+          emptyDir: {}
+        - name: minio-data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-milvus-svc
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: rag-milvus
+  ports:
+    - name: milvus-grpc
+      port: 19530
+      targetPort: milvus-grpc
+    - name: milvus-metrics
+      port: 9091
+      targetPort: milvus-metrics
