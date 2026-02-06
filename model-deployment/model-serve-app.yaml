@@ -37,7 +37,8 @@ spec:
                 --port 8100 \
                 --tensor-parallel-size 2 
                 --dtype bfloat16 \
-                --trust-remote-code 
+                --trust-remote-code \
+                --gpu-memory-utilization 0.5
 
               wait
           ports:

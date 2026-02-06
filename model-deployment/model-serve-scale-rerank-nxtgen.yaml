@@ -1,20 +1,18 @@
 apiVersion: apps/v1
-#kind: Deployment
 kind: StatefulSet
 metadata:
-  name: model-serve-scale
-  #namespace: vllm-scale
-  namespace: vllm-scale
+  name: model-serve-rerank
+  namespace: model-serve
 spec:
-  serviceName: model-serve-scale
+  serviceName: model-serve-rerank
   replicas: 1
   selector:
     matchLabels:
-      app: model-serve-scale
+      app: model-serve-rerank
   template:
     metadata:
       labels:
-        app: model-serve-scale
+        app: model-serve-rerank
     spec:
       tolerations:
         - key: nvidia.com/gpu
@@ -22,11 +20,11 @@ spec:
           effect: "NoSchedule"
       serviceAccountName: deployer
       containers:
-        - name: vllm-model-serve-scale
+        - name: vllm-model-serve-rerank
           image: vllm/vllm-openai:v0.14.1
           env:
             - name: CUDA_VISIBLE_DEVICES
-              value: "0,1,2,3"
+              value: "0"
             - name: VLLM_LOGGING_LEVEL
               value: INFO
             - name: HUGGINGFACE_HUB_CACHE
@@ -34,25 +32,22 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              echo "Starting granite-3.3-2b-instruct model on CUDA:0"
-              vllm serve ibm-granite/granite-3.3-2b-instruct \
+              echo "Starting rerank model on CUDA:0"
+              vllm serve BAAI/bge-reranker-v2-m3 \
                 --host 0.0.0.0 \
-                --port 8101 \
-                --dtype bfloat16 \
-                --trust-remote-code \
-                --tensor-parallel-size 4 
-
+                --port 8104 
+                
               wait
           ports:
-            - name: port-model
-              containerPort: 8101
+            - name: port-rerank
+              containerPort: 8104
 
           resources:
             limits:
-              nvidia.com/gpu: "4"
+              nvidia.com/gpu: "1"
 
           volumeMounts:
-            - name: pvc-model-serve-scale
+            - name: pvc-model-serve-rerank
               mountPath: /platform_storage
             - name: cache
               mountPath: /.cache
@@ -69,7 +64,7 @@ spec:
           emptyDir: {}
   volumeClaimTemplates:
     - metadata:
-        name: pvc-model-serve-scale
+        name: pvc-model-serve-rerank
       spec:
         accessModes:
           - ReadWriteOnce
@@ -82,43 +77,28 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: model-serve-scale
-  namespace: vllm-scale
+  name: model-serve-rerank
+  namespace: model-serve
 spec:
   type: ClusterIP
   selector:
-    app: model-serve-scale
+    app: model-serve-rerank
   ports:
-    - name: port-model
-      port: 8101
-      targetPort: port-model
+    - name: port-rerank
+      port: 8104
+      targetPort: port-rerank
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: model-serve-scale-route
-  namespace: vllm-scale
+  name: model-serve-rerank-route
+  namespace: model-serve
 spec:
-  host: model-serve-scale-route.impactsummit.nxtgen.cloud
+  host: model-serve-rerank.impactsummit.nxtgen.cloud
   to:
     kind: Service
-    name: model-serve-scale
+    name: model-serve-rerank
   port:
-    targetPort: port-model
+    targetPort: port-rerank
   tls:
     termination: edge
-
-
-#---
-#apiVersion: v1
-#kind: PersistentVolumeClaim
-#metadata:
-#  name: pvc-model-serve-scale
-#  namespace: vllm-scale
-#spec:
-#  accessModes:
-#    - ReadWriteOnce
-#  resources:
-#    requests:
-#      storage: 100Gi
-#  storageClassName: ocs-storagecluster-ceph-rbd

@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: model-serve-embed
+  namespace: model-serve
+spec:
+  serviceName: model-serve-embed
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-serve-embed
+  template:
+    metadata:
+      labels:
+        app: model-serve-embed
+    spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          value: 'True'
+          effect: "NoSchedule"
+      serviceAccountName: deployer
+      containers:
+        - name: vllm-model-serve-embed
+          image: vllm/vllm-openai:v0.14.1
+          env:
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+            - name: VLLM_LOGGING_LEVEL
+              value: INFO
+            - name: HUGGINGFACE_HUB_CACHE
+              value: "/platform_storage/HF_HOME"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting embed model on CUDA:0"
+              vllm serve intfloat/multilingual-e5-large \
+                --host 0.0.0.0 \
+                --port 8103 \
+                --enforce-eager \
+                --max-model-len 500 
+                
+              wait
+          ports:
+            - name: port-embed
+              containerPort: 8103
+
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+
+          volumeMounts:
+            - name: pvc-model-serve-embed
+              mountPath: /platform_storage
+            - name: cache
+              mountPath: /.cache
+            - name: config-volume
+              mountPath: /.config
+            - name: triton-volume
+              mountPath: /.triton
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: config-volume
+          emptyDir: {}
+        - name: triton-volume
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: pvc-model-serve-embed
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: ocs-storagecluster-ceph-rbd
+        #storageClassName: gp3-csi
+        resources:
+          requests:
+            storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-serve-embed
+  namespace: model-serve
+spec:
+  type: ClusterIP
+  selector:
+    app: model-serve-embed
+  ports:
+    - name: port-embed
+      port: 8103
+      targetPort: port-embed
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: model-serve-embed-route
+  namespace: model-serve
+spec:
+  host: model-serve-embed.impactsummit.nxtgen.cloud
+  to:
+    kind: Service
+    name: model-serve-embed
+  port:
+    targetPort: port-embed
+  tls:
+    termination: edge
