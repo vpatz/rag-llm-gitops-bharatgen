@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-serve-app
+  namespace: indic-rag2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-serve-app
+  template:
+    metadata:
+      labels:
+        app: model-serve-app
+    spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          value: 'True'
+          effect: "NoSchedule"
+      serviceAccountName: deployer
+      containers:
+        - name: vllm-model-serve-app
+          image: vllm/vllm-openai:v0.14.1
+          env:
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0,1"
+            - name: VLLM_LOGGING_LEVEL
+              value: INFO
+            - name: HUGGINGFACE_HUB_CACHE
+              value: "/platform_storage/HF_HOME"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting Qwen3-32B model on CUDA:0,1"
+              vllm serve Qwen/Qwen3-32B \
+                --host 0.0.0.0 \
+                --port 8100 \
+                --tensor-parallel-size 2 
+                --dtype bfloat16 \
+                --trust-remote-code 
+
+              wait
+          ports:
+            - name: port-model
+              containerPort: 8100
+
+          resources:
+            limits:
+              nvidia.com/gpu: "2"
+          volumeMounts:
+            - name: pvc-model-serve-app
+              mountPath: /platform_storage
+            - name: cache
+              mountPath: /.cache
+            - name: config-volume
+              mountPath: /.config
+            - name: triton-volume
+              mountPath: /.triton
+      volumes:
+        - name: pvc-model-serve-app
+          persistentVolumeClaim:
+            claimName: pvc-model-serve-app
+        - name: cache
+          emptyDir: {}
+        - name: config-volume
+          emptyDir: {}
+        - name: triton-volume
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-serve-app
+  namespace: indic-rag2
+spec:
+  type: ClusterIP
+  selector:
+    app: model-serve-app
+  ports:
+    - name: port-model
+      port: 8100
+      targetPort: port-model
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: model-serve-app-route
+  namespace: indic-rag2
+spec:
+  host: model-serve-app-route.impactsummit.nxtgen.cloud
+  to:
+    kind: Service
+    name: model-serve-app
+  port:
+    targetPort: port-model
+  tls:
+    termination: edge
+
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-model-serve-app
+  namespace: indic-rag2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: ocs-storagecluster-ceph-rbd
