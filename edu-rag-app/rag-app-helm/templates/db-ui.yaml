@@ -18,12 +18,28 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-      nodeSelector:
-        nvidia.com/gpu.present: "{{ .Values.nodeSelector.gpu }}"
+      #nodeSelector:
+      #  nvidia.com/gpu.present: "{{ .Values.nodeSelector.gpu }}"
       volumes:
         - name: rag-akm-storage-pvc
           persistentVolumeClaim:
             claimName: {{ .Values.pvc.name }}
+
+
+
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - rag-milvus
+            topologyKey: kubernetes.io/hostname
+
+
+
       containers:
         - name: db-app
           image: {{ .Values.dbUI.image }}
