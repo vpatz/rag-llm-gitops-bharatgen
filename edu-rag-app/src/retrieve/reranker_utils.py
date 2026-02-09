@@ -28,7 +28,8 @@ def rerank_documents(
     query: str,
     documents: List[dict],
     model: str = "/wca4z-pvc-ckpt/HF_cache/models--BAAI--bge-reranker-large/snapshots/55611d7bca2a7133960a6d3b71e083071bbfc312",
-    endpoint: str = "https://akm-rerank-bge-reranker-large-vllm-code.apps.dmf.dipc.res.ibm.com",
+    #endpoint: str = "https://akm-rerank-bge-reranker-large-vllm-code.apps.dmf.dipc.res.ibm.com",
+    endpoint: str = "http://model-serve-rerank-svc:8104",
     max_workers: int = 8
 ) -> List[Tuple[dict, float]]:
     """

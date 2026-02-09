@@ -48,7 +48,7 @@ def create_vlm_session(
 
     session = requests.Session()
     session.mount("http://", adapter)
-    session.mount("https://", adapter)
+    #session.mount("https://", adapter)
 
     SESSION = session
     logger.debug(

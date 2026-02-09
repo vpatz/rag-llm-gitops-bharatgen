@@ -1,4 +1,4 @@
-namespace: indic-rag
+namespace: model-serve
 
 imagePullSecrets:
   - cil15-vela-all-icr-io
