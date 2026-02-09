@@ -12,7 +12,7 @@ nodeSelector:
   gpu: "true"
 
 routes:
-  domain: indic-rag.vpc.res.ibm.com
+  domain: impactsummit.nxtgen.cloud
 
 # -------------------------------------------------
 # Flux-Backend for RAG
@@ -129,13 +129,13 @@ modelServe:
   routes:
     enabled: true
     chat:
-      host: chat-route.indic-rag.vpc.res.ibm.com
+      host: model-serve-chat.impactsummit.nxtgen.cloud
       servicePort: chat
     embed:
-      host: embed-route.indic-rag.vpc.res.ibm.com
+      host: model-serve-embed.impactsummit.nxtgen.cloud
       servicePort: embed
     rerank:
-      host: rerank-route.indic-rag.vpc.res.ibm.com
+      host: model-serve-rerank.impactsummit.nxtgen.cloud
       servicePort: rerank
     vision:
       host: vision-route.indic-rag.vpc.res.ibm.com
