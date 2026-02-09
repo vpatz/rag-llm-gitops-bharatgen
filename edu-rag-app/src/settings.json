@@ -9,14 +9,14 @@
   "score_threshold": 0.0,
   "max_concurrent_requests": 32,
 
-  "emb_endpoint": "http://model-serve-embed-svc",
+  "emb_endpoint": "http://model-serve-embed-svc.model-serve-svc.svc.cluster.local",
   "emb_model": "intfloat/multilingual-e5-large",
   "emb_max_tokens": 500,
-  "llm_endpoint": "http://model-serve-chat-svc",
+  "llm_endpoint": "http://model-serve-chat-svc.model-serve-svc.svc.cluster.local",
   "llm_model": "ibm-granite/granite-3.3-8b-instruct",
-  "vlm_endpoint": "http://model-serve-vision-svc",
+  "vlm_endpoint": "http://model-serve-vision-svc.model-serve-svc.svc.cluster.local",
   "vlm_model": "mistralai/Pixtral-12B-2409",
-  "reranker_endpoint": "http://model-serve-rerank-svc",
+  "reranker_endpoint": "http://model-serve-rerank-svc.model-serve-svc.svc.cluster.local",
   "reranker_model": "BAAI/bge-reranker-v2-m3",
 
   "milvus_host": "rag-milvus-svc",
