@@ -184,7 +184,7 @@ def tokenize_with_llm(prompt, emb_endpoint):
         "prompt": prompt
     }
     try:
-        response = requests.post(f"{emb_endpoint}/tokenize", json=payload)
+        response = requests.post(f"{emb_endpoint}/tokenize", json=payload, verify=False)
         response.raise_for_status()
         result = response.json()
         tokens = result.get("tokens", [])
@@ -204,7 +204,7 @@ def detokenize_with_llm(tokens, emb_endpoint):
         "tokens": tokens
     }
     try:
-        response = requests.post(f"{emb_endpoint}/detokenize", json=payload)
+        response = requests.post(f"{emb_endpoint}/detokenize", json=payload, verify=False)
         response.raise_for_status()
         result = response.json()
         prompt = result.get("prompt", "")

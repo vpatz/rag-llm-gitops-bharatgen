@@ -35,7 +35,8 @@ class Embedding:
             response = requests.post(
                 f"{self.emb_endpoint}/v1/embeddings",
                 data=json.dumps(payload),
-                headers=headers
+                headers=headers,
+                verify=False 
             )
             response.raise_for_status()
             r = response.json()

@@ -301,6 +301,7 @@ def post_file_async(
                     files={"files": (file_path.name, f, "application/pdf")},
                     data=data,
                     timeout=30,
+                    verify=False 
                 )
 
             if response.status_code == 200:
@@ -322,6 +323,7 @@ def poll_task(task_id: str) -> dict:
         response = requests.get(
             f"{docling_server_url}:{docling_server_port}/v1/result/{task_id}",
             timeout=30,
+            verify=False 
         )
 
         if response.status_code == 200:
