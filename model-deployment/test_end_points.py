@@ -11,8 +11,8 @@ import json
 #chat_model_url = "https://model-serve-qwen3-32b.impactsummit.nxtgen.cloud"
 #chat_model_name = "Qwen/Qwen3-32B" #ibm-granite/granite-3.3-8b-instruct"
 
-chat_model_url = "https://model-serve-chat.impactsummit.nxtgen.cloud"
-chat_model_name = "ibm-granite/granite-3.3-8b-instruct" #ibm-granite/granite-3.3-8b-instruct"
+chat_model_url = "https://model-serve-param-2-9.impactsummit.nxtgen.cloud/"
+chat_model_name = "bharatgenai/Param-1-2.9B-Instruct" #ibm-granite/granite-3.3-8b-instruct"
 url = chat_model_url+"/v1/chat/completions"
 
 headers = {

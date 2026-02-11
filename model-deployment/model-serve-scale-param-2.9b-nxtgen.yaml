@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: model-serve-param-2-9
+  namespace: model-serve
+spec:
+  serviceName: model-serve-param-2-9
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-serve-param-2-9
+  template:
+    metadata:
+      labels:
+        app: model-serve-param-2-9
+    spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          value: 'True'
+          effect: "NoSchedule"
+      serviceAccountName: deployer
+      containers:
+        - name: vllm-model-serve-param-2-9
+          image: vllm/vllm-openai:v0.14.1
+          env:
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+            - name: VLLM_LOGGING_LEVEL
+              value: INFO
+            - name: HUGGINGFACE_HUB_CACHE
+              value: "/platform_storage/HF_HOME"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting  model on CUDA:0"
+              vllm serve bharatgenai/Param-1-2.9B-Instruct \
+                --host 0.0.0.0 \
+                --port 8109 \
+                --trust-remote-code \
+                --dtype bfloat16 \
+                --revision 'vllm-compatible' \
+                --tensor-parallel-size 1
+              wait
+          ports:
+            - name: port-model
+              containerPort: 8109
+
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+
+          volumeMounts:
+            - name: pvc-model-serve-param-2-9
+              mountPath: /platform_storage
+            - name: cache
+              mountPath: /.cache
+            - name: config-volume
+              mountPath: /.config
+            - name: triton-volume
+              mountPath: /.triton
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: config-volume
+          emptyDir: {}
+        - name: triton-volume
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: pvc-model-serve-param-2-9
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: ocs-storagecluster-ceph-rbd
+        #storageClassName: gp3-csi
+        resources:
+          requests:
+            storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-serve-param-2-9
+  namespace: model-serve
+spec:
+  type: ClusterIP
+  selector:
+    app: model-serve-param-2-9
+  ports:
+    - name: port-model
+      port: 8109
+      targetPort: port-model
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: model-serve-param-2-9-route
+  namespace: model-serve
+spec:
+  host: model-serve-param-2-9.impactsummit.nxtgen.cloud
+  to:
+    kind: Service
+    name: model-serve-param-2-9
+  port:
+    targetPort: port-model
+  tls:
+    termination: edge
