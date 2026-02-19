@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: model-serve-amd-chat
-  namespace: model-serve
+  namespace: model-serve-amd
 spec:
   serviceName: model-serve-amd-chat
   replicas: 1
@@ -21,25 +21,28 @@ spec:
       serviceAccountName: deployer
       containers:
         - name: vllm-model-serve-amd-chat
-          image: rocm/vllm:rocm7.0.0_vllm_0.11.1_20251103
+          #image: rocm/vllm:rocm7.0.0_vllm_0.11.1_20251103
+          image: rocm/vllm:v0.14.0_amd_dev
+          #image: vllm/vllm-openai-rocm:v0.14.0
           env:
             - name: HIP_VISIBLE_DEVICES
-              value: "0"
+              value: "0,1"
             - name: VLLM_LOGGING_LEVEL
               value: INFO
             - name: HUGGINGFACE_HUB_CACHE
               value: "/platform_storage/HF_HOME"
             # Uncomment and adjust for your AMD GPU architecture:
             # MI300X: "9.4.2", MI250/MI210: "9.0.0", MI100: "9.0.8", RX 7900: "11.0.0"
-            - name: HSA_OVERRIDE_GFX_VERSION
-              value: "9.4.2"
+            #- name: HSA_OVERRIDE_GFX_VERSION
+            #  value: "9.0.0"
           command: ["/bin/sh", "-c"]
           args:
             - |
               echo "Starting model on AMD GPU (HIP:0)"
               vllm serve ibm-granite/granite-3.3-8b-instruct \
                 --host 0.0.0.0 \
-                --port 8102
+                --port 8102 \
+                --tensor-parallel-size 1 
 
               wait
           ports:
@@ -59,12 +62,17 @@ spec:
               mountPath: /.config
             - name: triton-volume
               mountPath: /.triton
+            - name: aiter-volume
+              mountPath: /.aiter
+
       volumes:
         - name: cache
           emptyDir: {}
         - name: config-volume
           emptyDir: {}
         - name: triton-volume
+          emptyDir: {}
+        - name: aiter-volume
           emptyDir: {}
   volumeClaimTemplates:
     - metadata:
@@ -82,7 +90,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: model-serve-amd-chat
-  namespace: model-serve
+  namespace: model-serve-amd
 spec:
   type: ClusterIP
   selector:
@@ -96,7 +104,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: model-serve-amd-chat-route
-  namespace: model-serve
+  namespace: model-serve-amd
 spec:
   host: model-serve-amd-chat.impactsummit.nxtgen.cloud
   to:
